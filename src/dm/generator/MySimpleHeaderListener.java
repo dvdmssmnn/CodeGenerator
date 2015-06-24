@@ -183,8 +183,9 @@ public class MySimpleHeaderListener extends SimpleHeaderBaseListener {
 		writer.append("#import <pthread.h>\n");
 		writer.append("#import <pthread.h>\n");
 		writer.append("#import \"Config.h\"\n");
-		writer.append("#import <CydiaSubstrate/CydiaSubstrate.h>\n");
+		writer.append("#import \"fishhook.h\"\n");
 		writer.append("#import <semaphore.h>\n");
+		writer.append("#import <dlfcn.h>\n");
 
 		for (String include : includes) {
 			writer.append(String.format("%s\n", include));
@@ -210,52 +211,42 @@ public class MySimpleHeaderListener extends SimpleHeaderBaseListener {
 		StringWriter writer = new StringWriter();
 
 		for (Function f : functions) {
-			writer.append(String.format("%s (*%s%s)(", f.getReturnType(),
-					Function.ORIGINAL_PREFIX, f.getName()));
-
-			List<Parameter> parameter = f.getParameter();
-			for (int i = 0; i < parameter.size(); ++i) {
-				if (i != 0) {
-					writer.append(", ");
-				}
-				writer.append(parameter.get(i).getType().toString());
-			}
-
-			writer.append(");\n");
+			writer.append(String.format(
+					"%s;\n",
+					f.getFunctionPointerVariable(Function.ORIGINAL_PREFIX
+							+ f.getName())));
 		}
 
 		writer.append("__attribute__((constructor))\n"
 				+ "static void initialize() {\n");
 		writer.append("    dispatch_async(dispatch_get_main_queue(), ^{\n");
-		for (Function f : functions) {
+		writer.append(String.format("struct rebinding rebinds[%d];\n",
+				functions.size()));
+		for (int i = 0; i < functions.size(); ++i) {
+			Function f = functions.get(i);
 			if (f.shouldFindSymbolByName()) {
-				writer.append(String.format("void *%s_symbol = 0;\n",
-						f.getName()));
 				writer.append(String.format(
-						"MSHookSymbol(%s_symbol, \"_%s\");\n", f.getName(),
-						f.getName()));
-				writer.append(String
-						.format("MSHookFunction(%s_symbol, (void*)&%s%s, (void**)&%s%s);\n",
-								f.getName(), Function.HOOK_FUNCTION_PREFIX,
-								f.getName(), Function.ORIGINAL_PREFIX,
-								f.getName()));
+						"%s%s = (%s)dlsym(RTLD_DEFAULT, \"%s\");\n",
+						Function.ORIGINAL_PREFIX, f.getName(),
+						f.getFunctionPointerTypeCast(), f.getName()));
 			} else {
-				writer.append(String
-						.format("MSHookFunction((void*)&%s, (void*)&%s%s, (void**)&%s%s);\n",
-								f.getName(), Function.HOOK_FUNCTION_PREFIX,
-								f.getName(), Function.ORIGINAL_PREFIX,
-								f.getName()));
+				writer.append(String.format("%s%s = (%s)%s;\n",
+						Function.ORIGINAL_PREFIX, f.getName(),
+						f.getFunctionPointerTypeCast(), f.getName()));
 			}
-
+			writer.append(String.format("rebinds[%d].name = (char*) \"%s\";\n",
+					i, f.getName()));
+			writer.append(String.format(
+					"rebinds[%d].replacement = (void*) %s;\n",
+					i,
+					String.format("%s%s", Function.HOOK_FUNCTION_PREFIX,
+							f.getName())));
 		}
+		writer.append(String.format("rebind_symbols(rebinds, %d);\n",
+				functions.size()));
 
 		writer.append("});\n");
 		writer.append("}\n\n");
-
-		writer.append("__attribute__((constructor))\n");
-		writer.append("static void constructor() {\n");
-		// writer.append("add_init_callback((void*)initialize);");
-		writer.append("}\n");
 
 		return writer.toString();
 	}

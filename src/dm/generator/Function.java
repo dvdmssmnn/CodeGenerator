@@ -282,4 +282,26 @@ public class Function {
 		this.findSymbolByName = findSymbolByName;
 	}
 
+	public String getFunctionPointerVariable(String dstVar) {
+		StringWriter writer = new StringWriter();
+
+		writer.append(String.format("%s(*%s)(", getReturnType().toString(),
+				dstVar));
+
+		List<Parameter> parameter = getParameter();
+		for (int i = 0; i < parameter.size(); ++i) {
+			if (i != 0) {
+				writer.append(", ");
+			}
+			writer.append(parameter.get(i).getType().toString());
+		}
+
+		writer.append(")");
+
+		return writer.toString();
+	}
+
+	public String getFunctionPointerTypeCast() {
+		return getFunctionPointerVariable("");
+	}
 }
